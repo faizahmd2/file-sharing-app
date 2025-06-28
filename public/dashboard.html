@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Sharing</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="https://i.ibb.co/KFY0fY0/favicon-32x32.png">
+    <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.5.4/dist/socket.io.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1691.0/aws-sdk.min.js"></script>
+    <style>
+        :root {
+            --primary: #667eea;
+            --primary-dark: #5a6fd8;
+            --secondary: #f093fb;
+            --success: #4ade80;
+            --danger: #f87171;
+            --warning: #fbbf24;
+            --background: #0f172a;
+            --surface: #1e293b;
+            --card: #334155;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #475569;
+            --shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            --glow: 0 0 20px rgba(102, 126, 234, 0.3);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, var(--background) 0%, #1e1b4b 100%);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 1rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 2rem;
+            height: calc(100vh - 2rem);
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                grid-template-columns: 1fr;
+                height: auto;
+            }
+        }
+
+        .card {
+            background: var(--surface);
+            border-radius: 1rem;
+            border: 1px solid var(--border);
+            backdrop-filter: blur(10px);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .upload-section {
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            height: fit-content;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+
+        .title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+
+        .upload-area {
+            border: 2px dashed var(--border);
+            border-radius: 0.75rem;
+            padding: 2rem 1rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(102, 126, 234, 0.05);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .upload-area::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(102, 126, 234, 0.1), transparent);
+            transition: left 0.5s ease;
+        }
+
+        .upload-area:hover {
+            border-color: var(--primary);
+            background: rgba(102, 126, 234, 0.1);
+            box-shadow: var(--glow);
+        }
+
+        .upload-area:hover::before {
+            left: 100%;
+        }
+
+        .upload-area.disabled {
+            opacity: 0.5;
+            pointer-events: none;
+            filter: grayscale(1);
+        }
+
+        .upload-area.uploading {
+            border-color: var(--warning);
+            background: rgba(251, 191, 36, 0.1);
+        }
+
+        .upload-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            display: block;
+        }
+
+        .upload-text {
+            font-size: 1.1rem;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+
+        .upload-subtext {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .controls {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+        }
+
+        .input {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            background: var(--card);
+            color: var(--text);
+            font-size: 0.875rem;
+            transition: all 0.2s ease;
+        }
+
+        .input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .button {
+            padding: 0.75rem 1.5rem;
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: white;
+            border: none;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.875rem;
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s ease;
+        }
+
+        .button:hover::before {
+            left: 100%;
+        }
+
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .button:disabled {
+            background: var(--border);
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .progress-container {
+            margin-top: 1rem;
+            display: none;
+        }
+
+        .progress {
+            width: 100%;
+            height: 0.5rem;
+            border-radius: 0.25rem;
+            background: var(--border);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            width: 0%;
+            transition: width 0.3s ease;
+            position: relative;
+        }
+
+        .progress-bar::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .files-section {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .files-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .files-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .files-count {
+            background: var(--primary);
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 1rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .files-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+        }
+
+        .file-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 1rem;
+            background: var(--card);
+            border-radius: 0.75rem;
+            border: 1px solid var(--border);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .file-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, transparent, rgba(102, 126, 234, 0.05));
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .file-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+            border-color: var(--primary);
+        }
+
+        .file-item:hover::before {
+            opacity: 1;
+        }
+
+        .file-icon {
+            font-size: 2rem;
+            margin-right: 1rem;
+            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+        }
+
+        .file-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .file-name {
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .file-meta {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .file-expiry {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .file-expiry.critical {
+            color: var(--danger);
+        }
+
+        .file-expiry.warning {
+            color: var(--warning);
+        }
+
+        .file-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .action-btn {
+            width: 2.5rem;
+            height: 2.5rem;
+            border-radius: 0.5rem;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.125rem;
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .action-btn.download {
+            background: rgba(74, 222, 128, 0.2);
+            color: var(--success);
+        }
+
+        .action-btn.download:hover {
+            background: var(--success);
+            color: white;
+            transform: scale(1.1);
+        }
+
+        .action-btn.delete {
+            background: rgba(248, 113, 113, 0.2);
+            color: var(--danger);
+        }
+
+        .action-btn.delete:hover {
+            background: var(--danger);
+            color: white;
+            transform: scale(1.1);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: var(--text-muted);
+        }
+
+        .empty-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            font-size: 1.125rem;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 1.5rem;
+            height: 1.5rem;
+            border: 2px solid var(--border);
+            border-radius: 50%;
+            border-top-color: var(--primary);
+            animation: spin 1s linear infinite;
+            margin-right: 0.75rem;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .alert {
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .alert.error {
+            background: rgba(248, 113, 113, 0.1);
+            border: 1px solid rgba(248, 113, 113, 0.3);
+            color: var(--danger);
+        }
+
+        .alert.warning {
+            background: rgba(251, 191, 36, 0.1);
+            border: 1px solid rgba(251, 191, 36, 0.3);
+            color: var(--warning);
+        }
+
+        .alert.success {
+            background: rgba(74, 222, 128, 0.1);
+            border: 1px solid rgba(74, 222, 128, 0.3);
+            color: var(--success);
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Scrollbar styling */
+        .files-content::-webkit-scrollbar {
+            width: 0.5rem;
+        }
+
+        .files-content::-webkit-scrollbar-track {
+            background: var(--surface);
+        }
+
+        .files-content::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 0.25rem;
+        }
+
+        .files-content::-webkit-scrollbar-thumb:hover {
+            background: var(--primary);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Upload Section -->
+        <div class="card">
+            <div class="upload-section">
+                <div class="header">
+                    <h1 class="title">📁 File Share</h1>
+                    <p class="upload-subtext">Secure temporary file sharing</p>
+                </div>
+
+                <div id="alertContainer"></div>
+
+                <div class="upload-area" id="uploadArea">
+                    <span class="upload-icon">☁️</span>
+                    <div class="upload-text">Drop files here or click to browse</div>
+                    <div class="upload-subtext">Max 100MB per file</div>
+                </div>
+
+                <input type="file" id="fileInput" class="file-input" multiple>
+
+                <div class="controls">
+                    <input type="number" id="expiryMinutes" class="input" placeholder="Expiry (minutes)" min="5" max="10080" value="60">
+                    <button id="uploadButton" class="button" disabled>Upload</button>
+                </div>
+
+                <div class="progress-container" id="progressContainer">
+                    <div class="progress">
+                        <div class="progress-bar" id="progressBar"></div>
+                    </div>
+                    <div id="progressText" style="margin-top: 0.5rem; font-size: 0.875rem; text-align: center;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Files Section -->
+        <div class="card">
+            <div class="files-section">
+                <div class="files-header">
+                    <h2 class="files-title">Your Files</h2>
+                    <span class="files-count" id="filesCount">0</span>
+                </div>
+                <div class="files-content">
+                    <div class="loading" id="loading">
+                        <div class="spinner"></div>
+                        Loading files...
+                    </div>
+                    <div class="empty-state" id="emptyState" style="display: none;">
+                        <div class="empty-icon">📄</div>
+                        <div>No files uploaded yet</div>
+                        <div style="font-size: 0.875rem; margin-top: 0.5rem;">Upload your first file to get started</div>
+                    </div>
+                    <div class="file-list" id="fileList"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const CONFIG = {
+            MAX_FILE_SIZE: 100 * 1024 * 1024, // 100MB
+            CHUNK_SIZE: 5 * 1024 * 1024, // 5MB chunks
+            MAX_CONCURRENT_UPLOADS: 3,
+            RETRY_ATTEMPTS: 3,
+            API_BASE: window.location.origin,
+            SOCKET_URL: window.location.origin
+        };
+
+        // Get unique ID from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        let uniqueId = urlParams.get('uniqueId');
+
+        // DOM elements
+        const elements = {
+            uploadArea: document.getElementById('uploadArea'),
+            fileInput: document.getElementById('fileInput'),
+            uploadButton: document.getElementById('uploadButton'),
+            expiryMinutes: document.getElementById('expiryMinutes'),
+            progressContainer: document.getElementById('progressContainer'),
+            progressBar: document.getElementById('progressBar'),
+            progressText: document.getElementById('progressText'),
+            loading: document.getElementById('loading'),
+            emptyState: document.getElementById('emptyState'),
+            fileList: document.getElementById('fileList'),
+            filesCount: document.getElementById('filesCount'),
+            alertContainer: document.getElementById('alertContainer')
+        };
+
+        // State management
+        const state = {
+            files: [],
+            uploading: false,
+            uploadQueue: [],
+            currentUploads: 0,
+            dailyLimitReached: false
+        };
+
+        // Initialize Socket.IO
+        // const socket = io(CONFIG.SOCKET_URL);
+        // socket.emit('join-file-sharing', uniqueId);
+
+        // socket.on('fetch-share-files', () => {
+        //     loadFiles();
+        // });
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function getFileIcon(fileName) {
+            const extension = fileName.split('.').pop()?.toLowerCase() || '';
+            const iconMap = {
+                // Images
+                'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️', 'svg': '🖼️', 'webp': '🖼️',
+                // Videos
+                'mp4': '🎬', 'avi': '🎬', 'mov': '🎬', 'wmv': '🎬', 'mkv': '🎬', 'webm': '🎬',
+                // Audio
+                'mp3': '🎵', 'wav': '🎵', 'ogg': '🎵', 'flac': '🎵', 'aac': '🎵',
+                // Archives
+                'zip': '🗜️', 'rar': '🗜️', '7z': '🗜️', 'tar': '🗜️', 'gz': '🗜️',
+                // Documents
+                'pdf': '📄', 'doc': '📝', 'docx': '📝', 'txt': '📝', 'rtf': '📝',
+                // Spreadsheets
+                'xls': '📊', 'xlsx': '📊', 'csv': '📊',
+                // Presentations
+                'ppt': '📊', 'pptx': '📊',
+                // Code
+                'js': '💻', 'html': '💻', 'css': '💻', 'json': '💻', 'xml': '💻',
+                'py': '🐍', 'java': '☕', 'cpp': '⚡', 'c': '⚡'
+            };
+            return iconMap[extension] || '📄';
+        }
+
+        function showAlert(message, type = 'info', duration = 5000) {
+            const alert = document.createElement('div');
+            alert.className = `alert ${type} fade-in`;
+            alert.textContent = message;
+            
+            elements.alertContainer.appendChild(alert);
+            
+            setTimeout(() => {
+                alert.style.opacity = '0';
+                setTimeout(() => alert.remove(), 300);
+            }, duration);
+        }
+
+        function formatTimeRemaining(expiryDate) {
+            const now = new Date();
+            const expiry = new Date(expiryDate);
+            const diff = expiry - now;
+
+            if (diff <= 0) {
+                return { text: 'Expired', class: 'critical', expired: true };
+            }
+
+            const minutes = Math.floor(diff / 60000);
+            const hours = Math.floor(minutes / 60);
+            const days = Math.floor(hours / 24);
+
+            let text, className;
+
+            if (days > 0) {
+                text = `${days}d ${hours % 24}h`;
+                className = 'normal';
+            } else if (hours > 0) {
+                text = `${hours}h ${minutes % 60}m`;
+                className = hours < 2 ? 'warning' : 'normal';
+            } else {
+                text = `${minutes}m`;
+                className = minutes < 30 ? 'critical' : 'warning';
+            }
+
+            return { text, class: className, expired: false };
+        }
+
+        async function uploadToS3(file, credentials, onProgress) {
+            const { uploadUrl, fields } = credentials;
+
+            if (file.size <= CONFIG.CHUNK_SIZE) {
+                // Small file — single-part upload
+                const formData = new FormData();
+                Object.entries(fields).forEach(([key, value]) => formData.append(key, value));
+                formData.append('file', file);
+
+                return new Promise((resolve, reject) => {
+                    const xhr = new XMLHttpRequest();
+                    xhr.upload.addEventListener('progress', (event) => {
+                        if (event.lengthComputable) onProgress(event.loaded / event.total);
+                    });
+                    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300) ? resolve() : reject(new Error(`Upload failed: ${xhr.status}`));
+                    xhr.onerror = (e) => {
+                        console.log("ERROR:",e)
+                        reject(new Error('Network error'))
+                    };
+                    xhr.open('POST', uploadUrl);
+                    xhr.send(formData);
+                });
+            } else {
+                // Large file — simulated multipart
+                const totalChunks = Math.ceil(file.size / CONFIG.CHUNK_SIZE);
+                let uploaded = 0;
+
+                for (let i = 0; i < totalChunks; i++) {
+                    const start = i * CONFIG.CHUNK_SIZE;
+                    const end = Math.min(file.size, start + CONFIG.CHUNK_SIZE);
+                    const chunk = file.slice(start, end);
+
+                    const formData = new FormData();
+                    Object.entries(fields).forEach(([key, value]) => formData.append(key, value));
+                    formData.append('file', chunk);
+
+                    await new Promise((resolve, reject) => {
+                        const xhr = new XMLHttpRequest();
+                        xhr.upload.addEventListener('progress', (event) => {
+                            if (event.lengthComputable) {
+                                uploaded += event.loaded;
+                                onProgress(Math.min(uploaded / file.size, 1));
+                            }
+                        });
+                        xhr.onload = () => (xhr.status >= 200 && xhr.status < 300) ? resolve() : reject(new Error(`Chunk failed: ${xhr.status}`));
+                        xhr.onerror = () => reject(new Error('Network error'));
+                        xhr.open('POST', uploadUrl);
+                        xhr.send(formData);
+                    });
+                }
+            }
+        }
+        
+        async function processUploadQueue() {
+            if (state.uploading || state.uploadQueue.length === 0 || state.currentUploads >= CONFIG.MAX_CONCURRENT_UPLOADS) {
+                return;
+            }
+
+            state.uploading = true;
+            elements.uploadArea.classList.add('uploading');
+            elements.progressContainer.style.display = 'block';
+
+            const expiryMinutes = parseInt(elements.expiryMinutes.value) || 60;
+
+            try {
+                while (state.uploadQueue.length > 0 && state.currentUploads < CONFIG.MAX_CONCURRENT_UPLOADS) {
+                    const file = state.uploadQueue.shift();
+                    await uploadFile(file, expiryMinutes);
+                }
+            } finally {
+                state.uploading = false;
+                elements.uploadArea.classList.remove('uploading');
+                elements.progressContainer.style.display = 'none';
+                elements.fileInput.value = '';
+                updateUploadButton();
+            }
+        }
+
+        // File management functions
+        async function loadFiles() {
+            try {
+                elements.loading.style.display = 'flex';
+                elements.emptyState.style.display = 'none';
+
+                const response = await fetch(`${CONFIG.API_BASE}/api/files?uniqueId=${uniqueId}`);
+                const data = await response.json();
+
+                state.files = data.files || [];
+                state.dailyLimitReached = data.disableUpload || false;
+
+                updateFilesDisplay();
+                updateUploadAvailability();
+
+            } catch (error) {
+                console.error('Failed to load files:', error);
+                showAlert('Failed to load files', 'error');
+            } finally {
+                elements.loading.style.display = 'none';
+            }
+        }
+
+        function updateFilesDisplay() {
+            elements.filesCount.textContent = state.files.length;
+
+            if (state.files.length === 0) {
+                elements.emptyState.style.display = 'block';
+                elements.fileList.innerHTML = '';
+                return;
+            }
+
+            elements.emptyState.style.display = 'none';
+            elements.fileList.innerHTML = state.files.map(file => {
+                const timeInfo = formatTimeRemaining(file.expire);
+                const icon = getFileIcon(file.originalName);
+                const size = formatFileSize(file.size);
+
+                return `
+                    <div class="file-item fade-in" data-file-key="${file.fileKey}">
+                        <div class="file-icon">${icon}</div>
+                        <div class="file-info">
+                            <div class="file-name" title="${file.originalName}">${file.originalName}</div>
+                            <div class="file-meta">
+                                <span>📏 ${size}</span>
+                                <span class="file-expiry ${timeInfo.class}" data-expiry="${file.expire}">
+                                    ⏰ ${timeInfo.text}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="file-actions">
+                            <button class="action-btn download" onclick="downloadFile('${file.fileKey}', '${file.originalName}')" title="Download">
+                                ⬇️
+                            </button>
+                            <button class="action-btn delete" onclick="deleteFile('${file.fileKey}')" title="Delete">
+                                🗑️
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function updateUploadAvailability() {
+            if (state.dailyLimitReached) {
+                elements.uploadArea.classList.add('disabled');
+                showAlert('Daily upload limit reached. Please try again tomorrow.', 'warning');
+            } else {
+                elements.uploadArea.classList.remove('disabled');
+            }
+        }
+
+        function updateUploadButton() {
+            const hasFiles = elements.fileInput.files.length > 0;
+            const hasExpiry = elements.expiryMinutes.value && parseInt(elements.expiryMinutes.value) >= 5;
+            
+            elements.uploadButton.disabled = !hasFiles || !hasExpiry || state.uploading || state.dailyLimitReached;
+        }
+
+        // File download function
+        async function downloadFile(fileKey, originalName) {
+            try {
+                const response = await fetch(`${CONFIG.API_BASE}/api/download/${uniqueId}/${fileKey}`);
+                
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(error);
+                }
+                
+                const data = await response.json();
+                
+                // Create a temporary link to trigger download
+                const link = document.createElement('a');
+                link.href = data.downloadUrl;
+                link.download = originalName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                showAlert(`Downloading ${originalName}...`, 'success');
+            } catch (error) {
+                console.error('Download error:', error);
+                showAlert(`Download failed: ${error.message}`, 'error');
+            }
+        }
+
+        // File delete function
+        async function deleteFile(fileKey) {
+            if (!confirm('Are you sure you want to delete this file?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${CONFIG.API_BASE}/api/files/${uniqueId}/${fileKey}`, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(error);
+                }
+
+                showAlert('File deleted successfully', 'success');
+                // socket.emit('new-file-uploaded', uniqueId);
+            } catch (error) {
+                console.error('Delete error:', error);
+                showAlert(`Delete failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function uploadFile(file, expiryMinutes) {
+            try {
+                state.currentUploads++;
+                
+                const credentials = await getUploadCredentials(file.name, file.size, expiryMinutes, file.type);
+                
+                await uploadToS3(file, credentials, (progress) => {
+                    elements.progressBar.style.width = (progress * 100) + '%';
+                    elements.progressText.textContent = `Uploading ${file.name}... ${Math.round(progress * 100)}%`;
+                });
+
+                // Complete the upload session
+                await completeUpload(credentials.sessionToken, credentials.sessionId);
+
+                showAlert(`${file.name} uploaded successfully!`, 'success');
+                loadFiles(); // Refresh file list
+
+            } catch (error) {
+                console.error('Upload error:', error);
+                showAlert(`Upload failed: ${error.message}`, 'error');
+                throw error;
+            } finally {
+                state.currentUploads--;
+            }
+        }
+
+        // Event listeners
+        elements.uploadArea.addEventListener('click', () => {
+            if (!state.dailyLimitReached && !state.uploading) {
+                elements.fileInput.click();
+            }
+        });
+
+        elements.uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            if (!state.dailyLimitReached && !state.uploading) {
+                elements.uploadArea.style.backgroundColor = 'rgba(102, 126, 234, 0.15)';
+            }
+        });
+
+        elements.uploadArea.addEventListener('dragleave', () => {
+            elements.uploadArea.style.backgroundColor = '';
+        });
+
+        elements.uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            elements.uploadArea.style.backgroundColor = '';
+            
+            if (state.dailyLimitReached || state.uploading) return;
+
+            const files = Array.from(e.dataTransfer.files);
+            if (files.length > 0) {
+                elements.fileInput.files = e.dataTransfer.files;
+                updateUploadButton();
+            }
+        });
+
+        elements.fileInput.addEventListener('change', updateUploadButton);
+        elements.expiryMinutes.addEventListener('input', updateUploadButton);
+
+        elements.uploadButton.addEventListener('click', () => {
+            const files = Array.from(elements.fileInput.files);
+            if (files.length === 0) return;
+
+            // Validate files
+            const invalidFiles = files.filter(file => {
+                if (file.size > CONFIG.MAX_FILE_SIZE) {
+                    showAlert(`${file.name} exceeds maximum file size (100MB)`, 'error');
+                    return true;
+                }
+                return false;
+            });
+
+            if (invalidFiles.length > 0) return;
+
+            // Add to upload queue
+            state.uploadQueue.push(...files);
+            processUploadQueue();
+        });
+
+        // Add client fingerprinting
+        function generateClientFingerprint() {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.textBaseline = 'top';
+            ctx.font = '14px Arial';
+            ctx.fillText('Client fingerprint', 2, 2);
+            const fingerprint = canvas.toDataURL();
+            return btoa(fingerprint + navigator.userAgent + screen.width + screen.height);
+        }
+
+        // Updated upload credentials function
+        async function getUploadCredentials(fileName, fileSize, expiryMinutes, contentType) {
+            // Step 1: Initialize upload session
+            const initResponse = await fetch(`${CONFIG.API_BASE}/api/init-upload`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    uniqueId,
+                    fileName,
+                    fileSize,
+                    expiryMinutes,
+                    clientFingerprint: generateClientFingerprint()
+                })
+            });
+
+            if (!initResponse.ok) {
+                const error = await initResponse.json();
+                throw new Error(error.error || 'Failed to initialize upload');
+            }
+
+            const initData = await initResponse.json();
+
+            // Step 2: Get upload credentials
+            const credResponse = await fetch(`${CONFIG.API_BASE}/api/upload-credentials`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-Session-Token': initData.sessionToken
+                },
+                body: JSON.stringify({ contentType })
+            });
+
+            if (!credResponse.ok) {
+                const error = await credResponse.json();
+                throw new Error(error.error || 'Failed to get upload credentials');
+            }
+
+            const credentials = await credResponse.json();
+            return {
+                ...credentials,
+                sessionToken: initData.sessionToken,
+                sessionId: initData.sessionId
+            };
+        }
+
+        // Updated upload completion function
+        async function completeUpload(sessionToken, sessionId) {
+            const response = await fetch(`${CONFIG.API_BASE}/api/upload-complete`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-Session-Token': sessionToken
+                },
+                body: JSON.stringify({ sessionId })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Failed to complete upload');
+            }
+
+            return response.json();
+        }
+
+        // Update time remaining for files every minute
+        setInterval(() => {
+            const expiryElements = document.querySelectorAll('.file-expiry[data-expiry]');
+            expiryElements.forEach(element => {
+                const expiryDate = element.getAttribute('data-expiry');
+                const timeInfo = formatTimeRemaining(expiryDate);
+                
+                element.textContent = `⏰ ${timeInfo.text}`;
+                element.className = `file-expiry ${timeInfo.class}`;
+                
+                if (timeInfo.expired) {
+                    const fileItem = element.closest('.file-item');
+                    if (fileItem) {
+                        fileItem.style.opacity = '0.5';
+                        fileItem.style.pointerEvents = 'none';
+                    }
+                }
+            });
+        }, 60000);
+
+        // Load files on page load
+        loadFiles();
+
+        // Make functions global so they can be called from HTML
+        window.downloadFile = downloadFile;
+        window.deleteFile = deleteFile;
+
+    </script>
+</body>
+</html>
